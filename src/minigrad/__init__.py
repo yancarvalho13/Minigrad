@@ -1,5 +1,5 @@
 from cProfile import label
-
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 from graphviz import Digraph, view
@@ -42,6 +42,7 @@ class Value:
     def __init__(self, data, _children=(), _op="", label=""):
         self.data = data
         self.grad = 0.0
+        self._backward = lambda: None
         self.prev = set(_children)
         self._op = _op
         self.label = label
@@ -51,12 +52,31 @@ class Value:
 
     def __add__(self, other):
         out = Value(self.data + other.data, (self, other), "+")
+
+        def _backward():
+            self.grad = 1.0 * out.grad    
+            other.grad = 1.0 * out.grad
+        out._backward = _backward
         return out
 
     def __mul__(self, other):
         out = Value(self.data * other.data, (self, other), "*")
-
+        def _backward():
+            self.grad = other.data * out.grad
+            other.grad = self.data * out.grad 
+        out._backward = _backward
         return out
+
+    def tanh(self):
+        x = self.data
+        t = (math.exp(2*x)-1)/(math.exp(2*x)+1)
+        out = Value(t, (self, ), label="tanh")
+
+        def _backward():
+            self.grad = (1 - t**2) * out.grad
+        out._backward = _backward
+        return out
+
 
 
 def visualize_labels():
@@ -118,8 +138,11 @@ def lol():
     L2 = L.data
 
     print((L2 - L1) / h)
-
+def derivTanh(tanh):
+    return 1 - tanh ** 2 
 def neuronLayer():
+    #Tanh formula  = e^(2x) - 1 / e^(2x) + 1
+    #Derivada de tanh = 1 - tanh² ->  
     #inputs
     x1 = Value(2.0, label='x1')
     x2 = Value(0.0, label='x2')
@@ -127,13 +150,22 @@ def neuronLayer():
     w1 = Value(-3.0, label='w1')
     w2 = Value(1.0, label='w2')
     # bias of the neuron
-    b = Value(6.7, label='b')
+    b = Value(6.8813735870195432, label='b')
     x1w1 = x1 * w1; x1w1.label = 'x1*w1'
     x2w2 = x2 * w2; x2w2.label = 'x2*w2'
     x1w1x2w2 = x1w1 + x2w2; x1w1x2w2.label = 'x1*w1 + x2*w2'
     n = x1w1x2w2 + b; n.label = 'n'
+    o = n.tanh(); o.label = 'o'
+    #initialize the backprop
+    o.grad = 1.0
+    o._backward()
+    n._backward()
+    b._backward()
+    x1w1x2w2._backward()
+    x1w1._backward()
+    x2w2._backward()
 
-    draw_dot(n)
+    draw_dot(o)
 def main():
     #visualize_labels()
     neuronLayer()
