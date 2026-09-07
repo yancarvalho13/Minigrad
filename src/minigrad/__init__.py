@@ -51,19 +51,48 @@ class Value:
         return f"Value(data={self.data})"
 
     def __add__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
         out = Value(self.data + other.data, (self, other), "+")
 
         def _backward():
-            self.grad = 1.0 * out.grad    
-            other.grad = 1.0 * out.grad
+            self.grad += 1.0 * out.grad    
+            other.grad += 1.0 * out.grad
         out._backward = _backward
         return out
 
     def __mul__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
         out = Value(self.data * other.data, (self, other), "*")
         def _backward():
-            self.grad = other.data * out.grad
-            other.grad = self.data * out.grad 
+            self.grad += other.data * out.grad
+            other.grad += self.data * out.grad 
+        out._backward = _backward
+        return out
+    def __rmul__(self, other):
+        return self * other
+
+    def __truediv__(self,other):
+        return self * other**-1
+
+    def __pow__(self, other):
+        assert isinstance(other, (int, float))
+        out = Value(self.data**other, (self,), f'**{other}')
+
+        def _backward():
+            self.grad += other * (self.data ** (other -1)) * out.grad
+        out._backward = _backward
+        return out
+
+    def __neg__(self):
+        return self * -1
+    def __sub__(self, other):
+        return self + (-other)
+    def exp(self):
+        x = self.data
+        out = Value(math.exp(x),(self,), 'exp')
+
+        def _backward():
+            self.grad += out.data * out.grad
         out._backward = _backward
         return out
 
@@ -73,73 +102,25 @@ class Value:
         out = Value(t, (self, ), label="tanh")
 
         def _backward():
-            self.grad = (1 - t**2) * out.grad
+            self.grad += (1 - t**2) * out.grad
         out._backward = _backward
         return out
+    def backward(self):
 
+         topo = []
+         visited = set() 
+         def build(node: Value):
+             if node not in visited:
+                 visited.add(node)
+                 
+                 for child in node.prev:
+                     build(child)
+                 topo.append(node)
+         self.grad = 1.0
+         build(self)
+         for node in reversed(topo):
+             node._backward()
 
-
-def visualize_labels():
-    a = Value(2.0, label="a")
-    b = Value(-3.0, label="b")
-    c = Value(10.0, label="c")
-    e = a * b
-    a.grad = -2 * -3 #-2 = e.grad
-    b.grad = -2 * 2
-    e.label = "e"
-    e.grad = -2
-    c.grad = -2
-    d = e + c
-    d.label = "d"
-    f = Value(-2.0, label="f")
-    d.grad = f.data
-    f.grad = d.data
-    L = d * f
-    L.label = "L"
-
-    L.grad = 1.0
-    a.data += 0.01 * a.grad
-    b.data += 0.01 * b.grad
-    c.data += 0.01 * c.grad
-    f.data += 0.01 * f.grad
-
-    e = a*b
-    d = e+c 
-    L = d*f
-    print(L)
-    dot = draw_dot(L)
-    dot.render("graph", view=True)
-
-    print(L.data)
-def lol():
-    h = 0.001
-    a = Value(2.0, label="a")
-    b = Value(-3.0, label="b")
-    c = Value(10.0, label="c")
-    e = a * b
-    e.label = "e"
-    d = e + c
-    d.label = "d"
-    f = Value(-2.0, label="f")
-    L = d * f
-    L.label = "L"
-    L1 = L.data
-
-    a = Value(2.0, label="a")
-    b = Value(-3.0, label="b")
-    c = Value(10.0, label="c")
-    e = a * b
-    e.label = "e"
-    d = e + c
-    d.label = "d"
-    f = Value(-2.0 + h, label="f")
-    L = d * f
-    L.label = "L"
-    L2 = L.data
-
-    print((L2 - L1) / h)
-def derivTanh(tanh):
-    return 1 - tanh ** 2 
 def neuronLayer():
     #Tanh formula  = e^(2x) - 1 / e^(2x) + 1
     #Derivada de tanh = 1 - tanh² ->  
@@ -157,20 +138,13 @@ def neuronLayer():
     n = x1w1x2w2 + b; n.label = 'n'
     o = n.tanh(); o.label = 'o'
     #initialize the backprop
-    o.grad = 1.0
-    o._backward()
-    n._backward()
-    b._backward()
-    x1w1x2w2._backward()
-    x1w1._backward()
-    x2w2._backward()
-
+    #e^(2x)
+    e = (2*n).exp()
+    o = (e - 1) / (e + 1)
+    o.backward()
     draw_dot(o)
 def main():
-    #visualize_labels()
     neuronLayer()
-
-
 
 if __name__ == "__main__":
     main()
